@@ -12,7 +12,9 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
+import io.jenkins.plugins.swarmcloud.ServiceLabels;
 import io.jenkins.plugins.swarmcloud.SwarmAgentTemplate;
+import static io.jenkins.plugins.swarmcloud.security.InputValidator.isNotBlank;
 import io.jenkins.plugins.swarmcloud.SwarmComputerLauncher;
 import io.jenkins.plugins.swarmcloud.SwarmConfigFile;
 import io.jenkins.plugins.swarmcloud.SwarmSecretConfig;
@@ -69,7 +71,7 @@ public class DockerSwarmClient implements Closeable {
         SSLConfig sslConfig = null;
 
         // Configure TLS if credentials are provided
-        if (credentialsId != null && !credentialsId.isBlank()) {
+        if (isNotBlank(credentialsId)) {
             DockerServerCredentials credentials = DockerCredentialsHelper.lookupCredentials(credentialsId, dockerHost);
             if (credentials != null) {
                 LOGGER.log(Level.FINE, "Configuring TLS with credentials: {0}", credentialsId);
@@ -135,7 +137,6 @@ public class DockerSwarmClient implements Closeable {
                     // Load client private key
                     PrivateKey privateKey = loadPrivateKey(clientKey);
 
-                    // Create trust store with CA cert
                     KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
                     trustStore.load(null, null);
                     trustStore.setCertificateEntry("ca", caCertificate);
@@ -143,7 +144,6 @@ public class DockerSwarmClient implements Closeable {
                     TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
                     tmf.init(trustStore);
 
-                    // Create key store with client cert and key
                     KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
                     keyStore.load(null, null);
                     keyStore.setKeyEntry("client", privateKey, "docker".toCharArray(),
@@ -152,7 +152,6 @@ public class DockerSwarmClient implements Closeable {
                     KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
                     kmf.init(keyStore, "docker".toCharArray());
 
-                    // Create SSL context
                     SSLContext sslContext = SSLContext.getInstance("TLS");
                     sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), new SecureRandom());
 
@@ -239,14 +238,13 @@ public class DockerSwarmClient implements Closeable {
                 .withImage(template.getImage())
                 .withEnv(env);
 
-        // Add mounts
         List<Mount> mounts = buildMounts(template);
         if (!mounts.isEmpty()) {
             containerSpec.withMounts(mounts);
         }
 
-        // Add entrypoint if specified
-        if (template.getEntrypoint() != null && !template.getEntrypoint().isBlank()) {
+        boolean hasCustomEntrypoint = isNotBlank(template.getEntrypoint());
+        if (hasCustomEntrypoint) {
             List<String> commandParts = parseCommand(template.getEntrypoint());
             containerSpec.withCommand(commandParts);
             LOGGER.log(Level.FINE, "Container entrypoint configured: {0}", commandParts);
@@ -258,7 +256,6 @@ public class DockerSwarmClient implements Closeable {
         // Skip args if:
         // - disableContainerArgs is enabled (image uses env vars only)
         // - custom entrypoint is specified (user controls the full entrypoint)
-        boolean hasCustomEntrypoint = template.getEntrypoint() != null && !template.getEntrypoint().isBlank();
         if (!template.isDisableContainerArgs() && !hasCustomEntrypoint) {
             List<String> args = List.of(jenkinsUrl, secret, agentName);
             containerSpec.withArgs(args);
@@ -269,10 +266,8 @@ public class DockerSwarmClient implements Closeable {
                     new Object[]{agentName, hasCustomEntrypoint, template.isDisableContainerArgs()});
         }
 
-        // Add working directory
         containerSpec.withDir(template.getRemoteFs());
 
-        // Add health check if configured
         if (template.hasHealthCheck()) {
             HealthCheck healthCheck = new HealthCheck()
                     .withTest(List.of("CMD-SHELL", template.getHealthCheckCommand()))
@@ -325,17 +320,15 @@ public class DockerSwarmClient implements Closeable {
                 .withMode(new ServiceModeConfig().withReplicated(
                         new ServiceReplicatedModeOptions().withReplicas(1)));
 
-        // Add labels for identification and management
         Map<String, String> labels = new HashMap<>();
-        labels.put("jenkins.agent", "true");
-        labels.put("jenkins.agent.name", agentName);
-        labels.put("jenkins.template", template.getName());
-        labels.put("jenkins.cloud", "swarm-agents-cloud");
-        labels.put("jenkins.created", String.valueOf(System.currentTimeMillis()));
+        labels.put(ServiceLabels.AGENT, "true");
+        labels.put(ServiceLabels.AGENT_NAME, agentName);
+        labels.put(ServiceLabels.TEMPLATE, template.getName());
+        labels.put(ServiceLabels.CLOUD, ServiceLabels.CLOUD_NAME);
+        labels.put(ServiceLabels.CREATED, String.valueOf(System.currentTimeMillis()));
         serviceSpec.withLabels(labels);
 
-        // Add network
-        if (networkName != null && !networkName.isBlank()) {
+        if (isNotBlank(networkName)) {
             NetworkAttachmentConfig networkConfig = new NetworkAttachmentConfig()
                     .withTarget(networkName);
 
@@ -371,11 +364,10 @@ public class DockerSwarmClient implements Closeable {
                     new Object[]{ports.size(), agentName});
         }
 
-        // Create the service with optional registry authentication
         var createServiceCmd = dockerClient.createServiceCmd(serviceSpec);
 
         String registryCredentialsId = template.getRegistryCredentialsId();
-        if (registryCredentialsId != null && !registryCredentialsId.isBlank()) {
+        if (isNotBlank(registryCredentialsId)) {
             String registryAddress = DockerCredentialsHelper.extractRegistryAddress(template.getImage());
             AuthConfig authConfig = DockerCredentialsHelper.createAuthConfig(
                     registryCredentialsId, registryAddress);
@@ -475,7 +467,7 @@ public class DockerSwarmClient implements Closeable {
     public List<Service> listJenkinsServices() {
         try {
             return dockerClient.listServicesCmd()
-                    .withLabelFilter(Map.of("jenkins.agent", "true"))
+                    .withLabelFilter(Map.of(ServiceLabels.AGENT, "true"))
                     .exec();
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to list Jenkins services", e);
@@ -491,8 +483,8 @@ public class DockerSwarmClient implements Closeable {
         try {
             return dockerClient.listServicesCmd()
                     .withLabelFilter(Map.of(
-                            "jenkins.agent", "true",
-                            "jenkins.cloud", cloudName
+                            ServiceLabels.AGENT, "true",
+                            ServiceLabels.CLOUD, cloudName
                     ))
                     .exec();
         } catch (Exception e) {
@@ -592,7 +584,7 @@ public class DockerSwarmClient implements Closeable {
 
         // Add cache directories as tmpfs mounts (for build caching)
         for (String cacheDir : template.getCacheDirs()) {
-            if (cacheDir != null && !cacheDir.isBlank() && cacheDir.startsWith("/")) {
+            if (isNotBlank(cacheDir) && cacheDir.startsWith("/")) {
                 Mount cacheMount = new Mount()
                         .withType(MountType.TMPFS)
                         .withTarget(cacheDir.trim())
@@ -1079,7 +1071,7 @@ public class DockerSwarmClient implements Closeable {
      */
     @Nullable
     private String convertHostEntryToDockerFormat(String entry) {
-        if (entry == null || entry.isBlank()) {
+        if (!isNotBlank(entry)) {
             return null;
         }
 
@@ -1100,10 +1092,4 @@ public class DockerSwarmClient implements Closeable {
         return ip + " " + hostname;
     }
 
-    /**
-     * Checks if a string is not null and not blank.
-     */
-    private static boolean isNotBlank(String value) {
-        return value != null && !value.isBlank();
-    }
 }

@@ -18,6 +18,8 @@ import hudson.slaves.NodeProvisioner;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import io.jenkins.plugins.swarmcloud.api.DockerSwarmClient;
+import io.jenkins.plugins.swarmcloud.config.DockerCredentialsHelper;
+import static io.jenkins.plugins.swarmcloud.security.InputValidator.isNotBlank;
 import io.jenkins.plugins.swarmcloud.monitoring.SwarmAuditLog;
 import io.jenkins.plugins.swarmcloud.ratelimit.ProvisionRateLimiter;
 import jenkins.model.Jenkins;
@@ -126,7 +128,7 @@ public class SwarmCloud extends Cloud {
 
     @DataBoundSetter
     public void setMaxProvisionsPerMinute(int maxProvisionsPerMinute) {
-        this.maxProvisionsPerMinute = maxProvisionsPerMinute > 0 ? maxProvisionsPerMinute : ProvisionRateLimiter.DEFAULT_MAX_PROVISIONS_PER_MINUTE;
+        this.maxProvisionsPerMinute = maxProvisionsPerMinute;
     }
 
     public long getMinProvisionIntervalMs() {
@@ -165,7 +167,7 @@ public class SwarmCloud extends Cloud {
      */
     @NonNull
     public String getEffectiveJenkinsUrl() {
-        if (jenkinsUrl != null && !jenkinsUrl.isBlank()) {
+        if (isNotBlank(jenkinsUrl)) {
             return jenkinsUrl;
         }
         Jenkins jenkins = Jenkins.getInstanceOrNull();
@@ -245,7 +247,6 @@ public class SwarmCloud extends Cloud {
 
     @Override
     public boolean canProvision(@NonNull Cloud.CloudState state) {
-        // Check if Jenkins is shutting down
         Jenkins jenkins = Jenkins.getInstanceOrNull();
         if (jenkins == null || jenkins.isQuietingDown() || jenkins.isTerminating()) {
             LOGGER.log(Level.FINE, "Not provisioning: Jenkins is shutting down or in quiet mode");
@@ -256,9 +257,10 @@ public class SwarmCloud extends Cloud {
         LOGGER.log(Level.FINE, "canProvision called for cloud ''{0}'' with label: {1}, templates count: {2}",
                 new Object[]{name, label, templates != null ? templates.size() : 0});
 
-        if (!canProvision()) {
+        int currentAgentCount = countCurrentAgents();
+        if (currentAgentCount >= maxConcurrentAgents) {
             LOGGER.log(Level.FINE, "canProvision=false: max agents reached ({0}/{1})",
-                    new Object[]{countCurrentAgents(), maxConcurrentAgents});
+                    new Object[]{currentAgentCount, maxConcurrentAgents});
             return false;
         }
 
@@ -459,7 +461,7 @@ public class SwarmCloud extends Cloud {
 
             Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
-            if (dockerHost == null || dockerHost.isBlank()) {
+            if (!isNotBlank(dockerHost)) {
                 return FormValidation.error("Docker host is required");
             }
 
@@ -492,7 +494,7 @@ public class SwarmCloud extends Cloud {
             }
 
             if (cause instanceof SSLHandshakeException) {
-                if (credentialsId == null || credentialsId.isBlank()) {
+                if (!isNotBlank(credentialsId)) {
                     return FormValidation.error(
                             "TLS/SSL handshake failed. The Docker host requires TLS authentication. " +
                             "Please select Docker Server Credentials with client certificate.");
@@ -553,15 +555,8 @@ public class SwarmCloud extends Cloud {
 
             StandardListBoxModel result = new StandardListBoxModel();
 
-            if (item == null) {
-                if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
-                    return result.includeCurrentValue(credentialsId);
-                }
-            } else {
-                if (!item.hasPermission(Item.EXTENDED_READ)
-                        && !item.hasPermission(CredentialsProvider.USE_ITEM)) {
-                    return result.includeCurrentValue(credentialsId);
-                }
+            if (!DockerCredentialsHelper.hasCredentialsAccess(item)) {
+                return result.includeCurrentValue(credentialsId);
             }
 
             result.includeEmptyValue();
@@ -571,7 +566,7 @@ public class SwarmCloud extends Cloud {
                             : ACL.SYSTEM,
                     item,
                     DockerServerCredentials.class,
-                    dockerHost != null && !dockerHost.isBlank()
+                    isNotBlank(dockerHost)
                             ? URIRequirementBuilder.fromUri(dockerHost).build()
                             : URIRequirementBuilder.create().build(),
                     CredentialsMatchers.always()
@@ -589,18 +584,11 @@ public class SwarmCloud extends Cloud {
                 @QueryParameter String value,
                 @QueryParameter String dockerHost) {
 
-            if (item == null) {
-                if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
-                    return FormValidation.ok();
-                }
-            } else {
-                if (!item.hasPermission(Item.EXTENDED_READ)
-                        && !item.hasPermission(CredentialsProvider.USE_ITEM)) {
-                    return FormValidation.ok();
-                }
+            if (!DockerCredentialsHelper.hasCredentialsAccess(item)) {
+                return FormValidation.ok();
             }
 
-            if (value == null || value.isBlank()) {
+            if (!isNotBlank(value)) {
                 return FormValidation.ok(); // Credentials are optional
             }
 
@@ -610,7 +598,7 @@ public class SwarmCloud extends Cloud {
                     item instanceof hudson.model.Queue.Task
                             ? ((hudson.model.Queue.Task) item).getDefaultAuthentication()
                             : ACL.SYSTEM,
-                    dockerHost != null && !dockerHost.isBlank()
+                    isNotBlank(dockerHost)
                             ? URIRequirementBuilder.fromUri(dockerHost).build()
                             : URIRequirementBuilder.create().build(),
                     CredentialsMatchers.withId(value)

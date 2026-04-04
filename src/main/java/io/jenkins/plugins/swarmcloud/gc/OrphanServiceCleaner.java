@@ -7,6 +7,7 @@ import hudson.model.AsyncPeriodicWork;
 import hudson.model.Node;
 import hudson.model.TaskListener;
 import hudson.slaves.Cloud;
+import io.jenkins.plugins.swarmcloud.ServiceLabels;
 import io.jenkins.plugins.swarmcloud.SwarmAgent;
 import io.jenkins.plugins.swarmcloud.SwarmCloud;
 import jenkins.model.Jenkins;
@@ -114,12 +115,12 @@ public class OrphanServiceCleaner extends AsyncPeriodicWork {
                 }
 
                 // Check if this is a Jenkins agent service
-                if (!"true".equals(labels.get("jenkins.agent"))) {
+                if (!"true".equals(labels.get(ServiceLabels.AGENT))) {
                     continue;
                 }
 
                 // Check creation time
-                String createdStr = labels.get("jenkins.created");
+                String createdStr = labels.get(ServiceLabels.CREATED);
                 long createdTime = 0;
                 if (createdStr != null) {
                     try {

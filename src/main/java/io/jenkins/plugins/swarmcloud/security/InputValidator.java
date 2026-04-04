@@ -249,4 +249,14 @@ public final class InputValidator {
         }
         return name.matches("^[a-zA-Z_][a-zA-Z0-9_]*$");
     }
+
+    /**
+     * Checks if a string is not null and not blank.
+     *
+     * @param value The string to check
+     * @return true if not null and not blank
+     */
+    public static boolean isNotBlank(@Nullable String value) {
+        return value != null && !value.isBlank();
+    }
 }

@@ -36,6 +36,20 @@ public class DockerCredentialsHelper {
     }
 
     /**
+     * Checks if the current user has permission to access credentials for the given item.
+     *
+     * @param item The context item (may be null for global context)
+     * @return true if the user has sufficient permissions
+     */
+    public static boolean hasCredentialsAccess(@Nullable Item item) {
+        if (item == null) {
+            return Jenkins.get().hasPermission(Jenkins.ADMINISTER);
+        }
+        return item.hasPermission(Item.EXTENDED_READ)
+                || item.hasPermission(CredentialsProvider.USE_ITEM);
+    }
+
+    /**
      * Looks up Docker server credentials by ID.
      *
      * @param credentialsId The credentials ID

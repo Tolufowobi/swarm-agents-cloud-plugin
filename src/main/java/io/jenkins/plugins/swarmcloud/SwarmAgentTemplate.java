@@ -26,6 +26,8 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.verb.POST;
+import io.jenkins.plugins.swarmcloud.config.DockerCredentialsHelper;
+import static io.jenkins.plugins.swarmcloud.security.InputValidator.isNotBlank;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -292,7 +294,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @Nullable
     public Long getLimitsNanoCPUs() {
-        if (cpuLimit == null || cpuLimit.isBlank()) return null;
+        if (!isNotBlank(cpuLimit)) return null;
         try {
             return (long) (Double.parseDouble(cpuLimit) * 1_000_000_000L);
         } catch (NumberFormatException e) {
@@ -329,7 +331,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @Nullable
     public Long getReservationsNanoCPUs() {
-        if (cpuReservation == null || cpuReservation.isBlank()) return null;
+        if (!isNotBlank(cpuReservation)) return null;
         try {
             return (long) (Double.parseDouble(cpuReservation) * 1_000_000_000L);
         } catch (NumberFormatException e) {
@@ -364,7 +366,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
 
     @Nullable
     private static Long parseMemoryToBytes(String memory) {
-        if (memory == null || memory.isBlank()) return null;
+        if (!isNotBlank(memory)) return null;
         memory = memory.trim().toLowerCase(Locale.ROOT);
         try {
             long multiplier = 1;
@@ -476,14 +478,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @DataBoundSetter
     public void setPlacementConstraintsString(String constraints) {
-        if (constraints == null || constraints.isBlank()) {
-            this.placementConstraints = null;
-            return;
-        }
-        this.placementConstraints = Arrays.stream(constraints.split("\\n"))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toList());
+        this.placementConstraints = parseNewlineSeparated(constraints);
     }
 
     /**
@@ -509,14 +504,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @DataBoundSetter
     public void setNetworkAliasesString(String aliases) {
-        if (aliases == null || aliases.isBlank()) {
-            this.networkAliases = null;
-            return;
-        }
-        this.networkAliases = Arrays.stream(aliases.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toList());
+        this.networkAliases = parseCommaSeparated(aliases);
     }
 
     /**
@@ -569,7 +557,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @DataBoundSetter
     public void setConfigsString(String configsStr) {
-        if (configsStr == null || configsStr.isBlank()) {
+        if (!isNotBlank(configsStr)) {
             this.configs = null;
             return;
         }
@@ -604,14 +592,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @DataBoundSetter
     public void setCacheDirsString(String cacheDirsStr) {
-        if (cacheDirsStr == null || cacheDirsStr.isBlank()) {
-            this.cacheDirs = null;
-            return;
-        }
-        this.cacheDirs = Arrays.stream(cacheDirsStr.split("\\n"))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty() && s.startsWith("/"))
-                .collect(Collectors.toList());
+        this.cacheDirs = parseNewlineSeparatedWithFilter(cacheDirsStr, s -> s.startsWith("/"));
     }
 
     @Nullable
@@ -655,7 +636,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      * Checks if health check is configured.
      */
     public boolean hasHealthCheck() {
-        return healthCheckCommand != null && !healthCheckCommand.isBlank();
+        return isNotBlank(healthCheckCommand);
     }
 
     // Advanced container options getters and setters (#120)
@@ -898,7 +879,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
 
     @DataBoundSetter
     public void setGenericResourcesString(String str) {
-        if (str == null || str.isBlank()) {
+        if (!isNotBlank(str)) {
             this.genericResources = null;
             return;
         }
@@ -996,7 +977,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @DataBoundSetter
     public void setPortBindingsString(String str) {
-        if (str == null || str.isBlank()) {
+        if (!isNotBlank(str)) {
             this.portBindings = null;
             return;
         }
@@ -1048,7 +1029,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @NonNull
     public SwarmAgentTemplate resolve() {
-        if (inheritFrom == null || inheritFrom.isBlank() || parent == null) {
+        if (!isNotBlank(inheritFrom) || parent == null) {
             return this;
         }
 
@@ -1124,8 +1105,8 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
     }
 
     private String mergeLabelStrings(String parent, String child) {
-        if (child == null || child.isBlank()) return parent;
-        if (parent == null || parent.isBlank()) return child;
+        if (!isNotBlank(child)) return parent;
+        if (!isNotBlank(parent)) return child;
         // Combine labels
         Set<String> labels = new java.util.LinkedHashSet<>();
         labels.addAll(Arrays.asList(parent.split("\\s+")));
@@ -1146,7 +1127,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
     }
 
     private List<String> parseCommaSeparated(String str) {
-        if (str == null || str.isBlank()) return null;
+        if (!isNotBlank(str)) return null;
         return Arrays.stream(str.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -1154,7 +1135,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
     }
 
     private List<String> parseNewlineSeparated(String str) {
-        if (str == null || str.isBlank()) return null;
+        if (!isNotBlank(str)) return null;
         return Arrays.stream(str.split("\\n"))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -1162,7 +1143,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
     }
 
     private List<String> parseNewlineSeparatedWithFilter(String str, java.util.function.Predicate<String> filter) {
-        if (str == null || str.isBlank()) return null;
+        if (!isNotBlank(str)) return null;
         return Arrays.stream(str.split("\\n"))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -1190,7 +1171,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
      */
     @NonNull
     public Set<LabelAtom> getLabelSet() {
-        if (labelString == null || labelString.isBlank()) {
+        if (!isNotBlank(labelString)) {
             return Collections.emptySet();
         }
         return Label.parse(labelString);
@@ -1204,7 +1185,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
             return mode == Node.Mode.NORMAL;
         }
 
-        if (labelString == null || labelString.isBlank()) {
+        if (!isNotBlank(labelString)) {
             return mode == Node.Mode.NORMAL;
         }
 
@@ -1628,15 +1609,8 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
 
             StandardListBoxModel result = new StandardListBoxModel();
 
-            if (item == null) {
-                if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
-                    return result.includeCurrentValue(registryCredentialsId);
-                }
-            } else {
-                if (!item.hasPermission(Item.EXTENDED_READ)
-                        && !item.hasPermission(CredentialsProvider.USE_ITEM)) {
-                    return result.includeCurrentValue(registryCredentialsId);
-                }
+            if (!DockerCredentialsHelper.hasCredentialsAccess(item)) {
+                return result.includeCurrentValue(registryCredentialsId);
             }
 
             result.includeEmptyValue();

@@ -11,6 +11,7 @@ import hudson.slaves.JNLPLauncher;
 import hudson.slaves.SlaveComputer;
 import jenkins.model.Jenkins;
 import jenkins.slaves.JnlpSlaveAgentProtocol;
+import static io.jenkins.plugins.swarmcloud.security.InputValidator.isNotBlank;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -244,7 +245,7 @@ public class SwarmComputerLauncher extends JNLPLauncher {
         args.add("-secret");
         args.add(secret);
 
-        if (workDir != null && !workDir.isBlank()) {
+        if (isNotBlank(workDir)) {
             args.add("-workDir");
             args.add(workDir);
         }
@@ -271,7 +272,7 @@ public class SwarmComputerLauncher extends JNLPLauncher {
             env.put("JENKINS_WEB_SOCKET", "true");
         }
 
-        if (workDir != null && !workDir.isBlank()) {
+        if (isNotBlank(workDir)) {
             env.put("JENKINS_AGENT_WORKDIR", workDir);
         }
 

@@ -9,6 +9,7 @@ import com.github.dockerjava.api.model.SwarmNodeStatus;
 import com.github.dockerjava.api.model.Task;
 import com.github.dockerjava.api.model.TaskState;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import io.jenkins.plugins.swarmcloud.ServiceLabels;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.model.AsyncPeriodicWork;
@@ -140,7 +141,7 @@ public class ClusterMonitor extends AsyncPeriodicWork {
                 if (serviceSpec != null) {
                     Map<String, String> labels = serviceSpec.getLabels();
                     if (labels != null) {
-                        info.setTemplateName(labels.get("jenkins.template"));
+                        info.setTemplateName(labels.get(ServiceLabels.TEMPLATE));
                     }
                 }
 
@@ -295,7 +296,7 @@ public class ClusterMonitor extends AsyncPeriodicWork {
             if (serviceSpec != null) {
                 Map<String, String> labels = serviceSpec.getLabels();
                 if (labels != null) {
-                    String templateName = labels.get("jenkins.template");
+                    String templateName = labels.get(ServiceLabels.TEMPLATE);
                     if (templateName != null) {
                         templateServiceCount.merge(templateName, 1, Integer::sum);
                     }

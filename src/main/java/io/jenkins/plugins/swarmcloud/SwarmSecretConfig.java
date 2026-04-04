@@ -11,6 +11,7 @@ import hudson.Util;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
 import hudson.model.Item;
+import io.jenkins.plugins.swarmcloud.config.DockerCredentialsHelper;
 import hudson.security.ACL;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
@@ -203,15 +204,8 @@ public class SwarmSecretConfig extends AbstractDescribableImpl<SwarmSecretConfig
 
             StandardListBoxModel result = new StandardListBoxModel();
 
-            if (item == null) {
-                if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
-                    return result.includeCurrentValue(credentialsId);
-                }
-            } else {
-                if (!item.hasPermission(Item.EXTENDED_READ)
-                        && !item.hasPermission(CredentialsProvider.USE_ITEM)) {
-                    return result.includeCurrentValue(credentialsId);
-                }
+            if (!DockerCredentialsHelper.hasCredentialsAccess(item)) {
+                return result.includeCurrentValue(credentialsId);
             }
 
             result.includeEmptyValue();
