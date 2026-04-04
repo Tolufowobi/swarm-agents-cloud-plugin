@@ -126,7 +126,7 @@ jenkins:
 | `privileged` | Run with elevated privileges |
 | `user` | Run as specific user (e.g., "1000:1000") |
 | `hostname` | Container hostname |
-| `command` | Custom entrypoint command |
+| `entrypoint` | Custom container entrypoint |
 | `disableContainerArgs` | Don't pass args to entrypoint |
 | `capAddString` | Linux capabilities to add |
 | `capDropString` | Linux capabilities to drop |

@@ -103,7 +103,7 @@ class DockerSwarmClientIntegrationTest {
     void testCreateAndRemoveService() {
         SwarmAgentTemplate template = new SwarmAgentTemplate("integration-test");
         template.setImage("alpine:latest");
-        template.setCommand("sleep 300");
+        template.setEntrypoint("sleep 300");
         template.setMemoryLimit("128m");
         template.setCpuLimit("0.5");
 
@@ -158,7 +158,7 @@ class DockerSwarmClientIntegrationTest {
     void testCreateServiceWithExtraHosts() {
         SwarmAgentTemplate template = new SwarmAgentTemplate("extra-hosts-test");
         template.setImage("alpine:latest");
-        template.setCommand("cat /etc/hosts && sleep 30");
+        template.setEntrypoint("cat /etc/hosts && sleep 30");
         template.setExtraHosts(List.of(
                 "myhost:192.168.1.1",
                 "database:10.0.0.5"

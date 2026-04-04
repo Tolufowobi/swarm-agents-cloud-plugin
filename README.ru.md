@@ -126,7 +126,7 @@ jenkins:
 | `privileged` | Запуск с повышенными привилегиями |
 | `user` | Запуск от конкретного пользователя (например, "1000:1000") |
 | `hostname` | Hostname контейнера |
-| `command` | Кастомная команда entrypoint |
+| `entrypoint` | Кастомный entrypoint контейнера |
 | `disableContainerArgs` | Не передавать аргументы в entrypoint |
 | `capAddString` | Linux capabilities для добавления |
 | `capDropString` | Linux capabilities для удаления |

@@ -245,11 +245,11 @@ public class DockerSwarmClient implements Closeable {
             containerSpec.withMounts(mounts);
         }
 
-        // Add command if specified
-        if (template.getCommand() != null && !template.getCommand().isBlank()) {
-            List<String> commandParts = parseCommand(template.getCommand());
+        // Add entrypoint if specified
+        if (template.getEntrypoint() != null && !template.getEntrypoint().isBlank()) {
+            List<String> commandParts = parseCommand(template.getEntrypoint());
             containerSpec.withCommand(commandParts);
-            LOGGER.log(Level.FINE, "Container command configured: {0}", commandParts);
+            LOGGER.log(Level.FINE, "Container entrypoint configured: {0}", commandParts);
         }
 
         // Pass Jenkins URL and agent info as args for images that expect command-line arguments
@@ -257,16 +257,16 @@ public class DockerSwarmClient implements Closeable {
         // Args are passed to the ENTRYPOINT as positional arguments ($1, $2, $3)
         // Skip args if:
         // - disableContainerArgs is enabled (image uses env vars only)
-        // - custom command is specified (user controls the full command)
-        boolean hasCustomCommand = template.getCommand() != null && !template.getCommand().isBlank();
-        if (!template.isDisableContainerArgs() && !hasCustomCommand) {
+        // - custom entrypoint is specified (user controls the full entrypoint)
+        boolean hasCustomEntrypoint = template.getEntrypoint() != null && !template.getEntrypoint().isBlank();
+        if (!template.isDisableContainerArgs() && !hasCustomEntrypoint) {
             List<String> args = List.of(jenkinsUrl, secret, agentName);
             containerSpec.withArgs(args);
             // Note: Don't log args as they contain the agent secret
             LOGGER.log(Level.FINE, "Container args configured for {0}", agentName);
         } else {
-            LOGGER.log(Level.FINE, "Container args disabled for {0} (customCommand={1}, disableArgs={2})",
-                    new Object[]{agentName, hasCustomCommand, template.isDisableContainerArgs()});
+            LOGGER.log(Level.FINE, "Container args disabled for {0} (customEntrypoint={1}, disableArgs={2})",
+                    new Object[]{agentName, hasCustomEntrypoint, template.isDisableContainerArgs()});
         }
 
         // Add working directory

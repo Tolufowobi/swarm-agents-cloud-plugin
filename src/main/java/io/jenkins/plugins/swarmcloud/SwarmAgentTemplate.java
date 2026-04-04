@@ -50,7 +50,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
     private final String name;
     private String image;
     private String labelString;
-    private String command;
+    private String entrypoint;
     private String remoteFs;
     private int numExecutors;
     private int maxInstances;
@@ -206,13 +206,13 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
     }
 
     @Nullable
-    public String getCommand() {
-        return command;
+    public String getEntrypoint() {
+        return entrypoint;
     }
 
     @DataBoundSetter
-    public void setCommand(String command) {
-        this.command = Util.fixEmptyAndTrim(command);
+    public void setEntrypoint(String entrypoint) {
+        this.entrypoint = Util.fixEmptyAndTrim(entrypoint);
     }
 
     @NonNull
@@ -1065,7 +1065,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
         // Inherit from parent, override with current values
         resolved.setImage(this.image != null ? this.image : parentTemplate.getImage());
         resolved.setLabelString(mergeLabelStrings(parentTemplate.getLabelString(), this.labelString));
-        resolved.setCommand(this.command != null ? this.command : parentTemplate.getCommand());
+        resolved.setEntrypoint(this.entrypoint != null ? this.entrypoint : parentTemplate.getEntrypoint());
         resolved.setRemoteFs(this.remoteFs != null ? this.remoteFs : parentTemplate.getRemoteFs());
         resolved.setNumExecutors(this.numExecutors > 0 ? this.numExecutors : parentTemplate.getNumExecutors());
         resolved.setMaxInstances(this.maxInstances > 0 ? this.maxInstances : parentTemplate.getMaxInstances());
