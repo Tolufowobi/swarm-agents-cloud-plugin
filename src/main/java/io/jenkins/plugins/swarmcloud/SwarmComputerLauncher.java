@@ -276,8 +276,11 @@ public class SwarmComputerLauncher extends JNLPLauncher {
             env.put("JENKINS_AGENT_WORKDIR", workDir);
         }
 
-        // Direct connection mode (recommended for Docker Swarm)
-        env.put("JENKINS_DIRECT_CONNECTION", jenkinsUrl.replace("http://", "").replace("https://", ""));
+        // Direct connection mode (only when not using WebSocket)
+        // JENKINS_DIRECT_CONNECTION conflicts with JENKINS_WEB_SOCKET and must not be set together
+        if (!useWebSocket) {
+            env.put("JENKINS_DIRECT_CONNECTION", jenkinsUrl.replace("http://", "").replace("https://", ""));
+        }
 
         return env;
     }

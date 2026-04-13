@@ -544,9 +544,12 @@ public class DockerSwarmClient implements Closeable {
         env.add("DOCKER_SWARM_PLUGIN_JENKINS_AGENT_JNLP_URL=" + jenkinsUrlNormalized + "/computer/" + agentName + "/jenkins-agent.jnlp");
         env.add("DOCKER_SWARM_PLUGIN_JENKINS_AGENT_SECRET=" + secret);
 
-        // For jenkins/inbound-agent image compatibility
-        env.add("JENKINS_DIRECT_CONNECTION=" +
-                jenkinsUrlNormalized.replace("http://", "").replace("https://", ""));
+        // For jenkins/inbound-agent image compatibility (only when not using WebSocket)
+        // JENKINS_DIRECT_CONNECTION conflicts with JENKINS_WEB_SOCKET and must not be set together
+        if (!env.contains("JENKINS_WEB_SOCKET=true")) {
+            env.add("JENKINS_DIRECT_CONNECTION=" +
+                    jenkinsUrlNormalized.replace("http://", "").replace("https://", ""));
+        }
 
         // Add template-specific environment variables
         for (SwarmAgentTemplate.EnvironmentVariable var : template.getEnvironmentVariables()) {
