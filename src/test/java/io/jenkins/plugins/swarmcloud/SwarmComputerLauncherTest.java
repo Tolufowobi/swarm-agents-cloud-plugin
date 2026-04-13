@@ -214,7 +214,8 @@ class SwarmComputerLauncherTest {
         assertEquals("secret-123", env.get("JENKINS_SECRET"));
         assertEquals("true", env.get("JENKINS_WEB_SOCKET"));
         assertEquals("/home/jenkins/agent", env.get("JENKINS_AGENT_WORKDIR"));
-        assertNotNull(env.get("JENKINS_DIRECT_CONNECTION"));
+        // JENKINS_DIRECT_CONNECTION must not be set when WebSocket is enabled
+        assertNull(env.get("JENKINS_DIRECT_CONNECTION"));
     }
 
     @Test
@@ -233,7 +234,29 @@ class SwarmComputerLauncherTest {
 
     @Test
     void testBuildAgentEnvironmentDirectConnection() {
+        // Direct connection should be set when WebSocket is disabled
         Map<String, String> env = SwarmComputerLauncher.buildAgentEnvironment(
+                "http://jenkins:8080/",
+                "my-agent",
+                "secret-123",
+                false,
+                null
+        );
+
+        assertEquals("jenkins:8080/", env.get("JENKINS_DIRECT_CONNECTION"));
+
+        env = SwarmComputerLauncher.buildAgentEnvironment(
+                "https://secure-jenkins:8443/",
+                "my-agent",
+                "secret-123",
+                false,
+                null
+        );
+
+        assertEquals("secure-jenkins:8443/", env.get("JENKINS_DIRECT_CONNECTION"));
+
+        // Direct connection must NOT be set when WebSocket is enabled
+        env = SwarmComputerLauncher.buildAgentEnvironment(
                 "http://jenkins:8080/",
                 "my-agent",
                 "secret-123",
@@ -241,18 +264,7 @@ class SwarmComputerLauncherTest {
                 null
         );
 
-        // Should strip protocol from direct connection
-        assertEquals("jenkins:8080/", env.get("JENKINS_DIRECT_CONNECTION"));
-
-        env = SwarmComputerLauncher.buildAgentEnvironment(
-                "https://secure-jenkins:8443/",
-                "my-agent",
-                "secret-123",
-                true,
-                null
-        );
-
-        assertEquals("secure-jenkins:8443/", env.get("JENKINS_DIRECT_CONNECTION"));
+        assertNull(env.get("JENKINS_DIRECT_CONNECTION"));
     }
 
     @Test
