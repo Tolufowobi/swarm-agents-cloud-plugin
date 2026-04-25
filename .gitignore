@@ -21,6 +21,7 @@ work/
 
 # AI assistant
 .claude/
+superpowers/
 
 # Logs
 *.log
