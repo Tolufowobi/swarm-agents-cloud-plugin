@@ -234,9 +234,9 @@ public class DockerSwarmClient implements Closeable {
         // Build environment variables with secret
         List<String> env = buildEnvironmentVariables(template, jenkinsUrl, agentName, secret);
 
-        ContainerSpec containerSpec = new ContainerSpec()
-                .withImage(template.getImage())
-                .withEnv(env);
+        ContainerSpecWithCapabilities containerSpec = new ContainerSpecWithCapabilities();
+        containerSpec.withImage(template.getImage());
+        containerSpec.withEnv(env);
 
         List<Mount> mounts = buildMounts(template);
         if (!mounts.isEmpty()) {
@@ -817,18 +817,21 @@ public class DockerSwarmClient implements Closeable {
 
     /**
      * Applies advanced container options to the container spec (#120).
+     * Package-private so unit tests in the same package can invoke it directly.
      */
-    private void applyAdvancedContainerOptions(ContainerSpec containerSpec, SwarmAgentTemplate template) {
-        // Capabilities - log requested capabilities for debugging
-        // Note: Docker Swarm mode has limited support for capabilities compared to standalone Docker
-        // Capabilities are typically managed through privileged mode or seccomp/apparmor profiles
+    void applyAdvancedContainerOptions(ContainerSpecWithCapabilities containerSpec, SwarmAgentTemplate template) {
+        // Capabilities (Docker API 1.41+, Docker 20.10+).
+        // docker-java-api does not expose CapabilityAdd/Drop on ContainerSpec,
+        // so we rely on the project-local ContainerSpecWithCapabilities subclass.
         List<String> capAdd = template.getCapAdd();
-        List<String> capDrop = template.getCapDrop();
         if (!capAdd.isEmpty()) {
-            LOGGER.log(Level.FINE, "Requested capabilities to add (limited support in Swarm): {0}", capAdd);
+            containerSpec.withCapabilityAdd(capAdd);
+            LOGGER.log(Level.FINE, "Applying capabilities to add: {0}", capAdd);
         }
+        List<String> capDrop = template.getCapDrop();
         if (!capDrop.isEmpty()) {
-            LOGGER.log(Level.FINE, "Requested capabilities to drop (limited support in Swarm): {0}", capDrop);
+            containerSpec.withCapabilityDrop(capDrop);
+            LOGGER.log(Level.FINE, "Applying capabilities to drop: {0}", capDrop);
         }
 
         // Privileged mode
