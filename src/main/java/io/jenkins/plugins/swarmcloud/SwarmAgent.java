@@ -66,7 +66,9 @@ public class SwarmAgent extends AbstractCloudSlave {
                         template.getRemoteFs(),
                         template.getConnectionTimeoutSeconds()
                 ),
-                new SwarmRetentionStrategy(idleMinutes > 0 ? idleMinutes : DEFAULT_IDLE_MINUTES),
+                template.isOneShot()
+                        ? new SwarmOnceRetentionStrategy(idleMinutes > 0 ? idleMinutes : DEFAULT_IDLE_MINUTES)
+                        : new SwarmRetentionStrategy(idleMinutes > 0 ? idleMinutes : DEFAULT_IDLE_MINUTES),
                 java.util.Collections.emptyList()
         );
         this.cloudName = cloudName;

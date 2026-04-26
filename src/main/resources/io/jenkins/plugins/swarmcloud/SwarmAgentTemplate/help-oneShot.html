@@ -1,0 +1,27 @@
+<div>
+    When enabled, the Docker Swarm service backing this agent is removed
+    immediately after the agent finishes a single Jenkins build, instead of
+    being kept alive for the idle timeout window.
+
+    <p>
+        Useful when you need a guaranteed-clean filesystem and process state
+        per build (for example, security-sensitive jobs or workloads that
+        leak temporary state).
+    </p>
+
+    <p>
+        <b>Trade-offs:</b>
+    </p>
+    <ul>
+        <li>Each build pays the full container provisioning cost (image pull
+            + agent connection handshake), which adds tens of seconds to
+            queue time.</li>
+        <li><b>Number of Executors</b> must be set to <code>1</code>. The
+            one-shot retention strategy terminates the agent after the
+            first build completes, which would abort any other build still
+            running on a second executor.</li>
+        <li>If a parent template (referenced via <i>Inherit From</i>) has
+            this option enabled, child templates inherit it and cannot
+            disable it.</li>
+    </ul>
+</div>

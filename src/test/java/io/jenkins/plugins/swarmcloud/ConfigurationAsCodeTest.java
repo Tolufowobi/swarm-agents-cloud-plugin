@@ -124,6 +124,12 @@ class ConfigurationAsCodeTest {
         assertEquals(Node.Mode.EXCLUSIVE, dockerTemplate.getMode());
         assertEquals("4.0", dockerTemplate.getCpuLimit());
         assertEquals("8g", dockerTemplate.getMemoryLimit());
+        assertTrue(dockerTemplate.isOneShot(),
+                "docker-builder template in full-config.yaml has oneShot: true");
+
+        // The other two templates have no oneShot set => default false
+        assertFalse(mavenTemplate.isOneShot());
+        assertFalse(nodejsTemplate.isOneShot());
     }
 
     @Test

@@ -68,6 +68,7 @@ jenkins:
             numExecutors: 1
             maxInstances: 5
             mode: EXCLUSIVE
+            oneShot: true
             cpuLimit: "4.0"
             memoryLimit: "8g"
             hostBinds:

@@ -96,6 +96,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
     private List<String> capDrop;       // Linux capabilities to drop
     private List<String> sysctls;       // Kernel parameters (e.g., net.core.somaxconn=1024)
     private boolean privileged;         // Run in privileged mode
+    private boolean oneShot;            // Terminate the agent after a single completed build (#7)
     private String user;                // User to run container as (e.g., "1000:1000")
     private String hostname;            // Container hostname
     private List<String> dnsServers;    // Custom DNS servers
@@ -710,6 +711,15 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
         this.privileged = privileged;
     }
 
+    public boolean isOneShot() {
+        return oneShot;
+    }
+
+    @DataBoundSetter
+    public void setOneShot(boolean oneShot) {
+        this.oneShot = oneShot;
+    }
+
     /**
      * Returns true if container args should be disabled.
      * When disabled, only environment variables are passed to the container.
@@ -1080,6 +1090,7 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
         resolved.setCapDrop(mergeLists(parentTemplate.getCapDrop(), this.capDrop));
         resolved.setSysctls(mergeLists(parentTemplate.getSysctls(), this.sysctls));
         resolved.setPrivileged(this.privileged || parentTemplate.isPrivileged());
+        resolved.setOneShot(this.oneShot || parentTemplate.isOneShot());
         resolved.setUser(this.user != null ? this.user : parentTemplate.getUser());
         resolved.setHostname(this.hostname != null ? this.hostname : parentTemplate.getHostname());
         resolved.setDnsServers(mergeLists(parentTemplate.getDnsServers(), this.dnsServers));
@@ -1507,6 +1518,20 @@ public class SwarmAgentTemplate extends AbstractDescribableImpl<SwarmAgentTempla
             Jenkins.get().checkPermission(Jenkins.ADMINISTER);
             if (Util.fixEmptyAndTrim(value) == null) {
                 return FormValidation.error("Docker image is required");
+            }
+            return FormValidation.ok();
+        }
+
+        @POST
+        public FormValidation doCheckNumExecutors(@QueryParameter int value,
+                                                  @QueryParameter boolean oneShot) {
+            Jenkins.get().checkPermission(Jenkins.ADMINISTER);
+            if (value <= 0) {
+                return FormValidation.error("Number of executors must be greater than 0");
+            }
+            if (oneShot && value > 1) {
+                return FormValidation.error(
+                        "One-shot agents (#7) must have exactly one executor; got " + value + ".");
             }
             return FormValidation.ok();
         }

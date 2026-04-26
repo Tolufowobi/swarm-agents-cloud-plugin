@@ -379,4 +379,30 @@ class SwarmAgentTemplateTest {
         template.setRegistryCredentialsId("   ");
         assertNull(template.getRegistryCredentialsId());
     }
+
+    @Test
+    void defaultOneShotIsFalse() {
+        SwarmAgentTemplate template = new SwarmAgentTemplate("default-oneShot-test");
+        assertFalse(template.isOneShot(),
+                "newly-constructed templates must default to oneShot=false (backward-compat)");
+    }
+
+    @Test
+    void resolveInheritsOneShotFromParent() {
+        SwarmAgentTemplate parent = new SwarmAgentTemplate("parent");
+        parent.setImage("img");
+        parent.setOneShot(true);
+
+        SwarmAgentTemplate child = new SwarmAgentTemplate("child");
+        child.setInheritFrom("parent");
+        // child.setOneShot defaults to false
+
+        SwarmCloud cloud = new SwarmCloud("c");
+        cloud.setTemplates(java.util.List.of(parent, child));
+        // setTemplates wires up parent links so resolve() can find the parent.
+
+        SwarmAgentTemplate resolved = child.resolve();
+        assertTrue(resolved.isOneShot(),
+                "child must inherit oneShot=true from parent template");
+    }
 }
