@@ -45,6 +45,22 @@ public class SwarmOnceRetentionStrategy extends CloudSlaveRetentionStrategy<Abst
         return idleMinutes;
     }
 
+    /**
+     * Returns the idle timeout in milliseconds for the parent {@link CloudSlaveRetentionStrategy}'s
+     * {@code check()} loop. Without this override, the parent uses the static
+     * {@code CloudSlaveRetentionStrategy.TIMEOUT} default (10 minutes) regardless of the
+     * {@code idleMinutes} value the constructor stored.
+     * <p>
+     * Relevant only for the edge case "agent connected but no build was ever dispatched": in
+     * that case the parent's idle check eventually reaps the agent. The main one-shot path
+     * (build runs, {@link #done(Executor)} fires from {@link ExecutorListener}) terminates
+     * the agent immediately and does not depend on this method.
+     */
+    @Override
+    protected long getIdleMaxTime() {
+        return java.util.concurrent.TimeUnit.MINUTES.toMillis(idleMinutes);
+    }
+
     @Override
     public void taskAccepted(Executor executor, Queue.Task task) {
         // No-op until the task completes; termination is triggered in taskCompleted.

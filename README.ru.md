@@ -124,12 +124,13 @@ jenkins:
 | Поле | Описание |
 |------|----------|
 | `privileged` | Запуск с повышенными привилегиями |
+| `oneShot` | Терминировать агент после одной завершённой сборки (требует `numExecutors=1`) |
 | `user` | Запуск от конкретного пользователя (например, "1000:1000") |
 | `hostname` | Hostname контейнера |
 | `entrypoint` | Кастомный entrypoint контейнера |
 | `disableContainerArgs` | Не передавать аргументы в entrypoint |
-| `capAddString` | Linux capabilities для добавления |
-| `capDropString` | Linux capabilities для удаления |
+| `capAdd` / `capAddString` | Linux capabilities для добавления (требуется Docker Engine 20.10+ / API 1.41+) |
+| `capDrop` / `capDropString` | Linux capabilities для удаления (требуется Docker Engine 20.10+ / API 1.41+) |
 | `dnsServersString` | Кастомные DNS серверы |
 
 ### Наследование шаблонов
@@ -149,6 +150,54 @@ templates:
       - key: "MAVEN_OPTS"
         value: "-Xmx1g"
 ```
+
+### Эфемерные / One-Shot агенты
+
+Установите `oneShot: true` на шаблоне, чтобы агент самоликвидировался сразу после одной
+завершённой сборки, вместо ожидания idle-timeout. Полезно когда каждой сборке требуется
+гарантированно чистая файловая система и состояние процессов (security-sensitive job'ы,
+workload'ы, оставляющие временный мусор и т.п.).
+
+```yaml
+templates:
+  - name: "ephemeral-build"
+    image: "jenkins/inbound-agent:latest"
+    labelString: "ephemeral"
+    numExecutors: 1            # Должно быть 1 при oneShot=true
+    oneShot: true
+    idleTimeoutMinutes: 1      # Запасной путь для редкого случая "агент подключился, но build не запустился"
+```
+
+**Trade-off'ы:**
+
+- Каждая сборка платит полную стоимость провижионинга контейнера (image pull + agent
+  connection handshake), добавляя десятки секунд к queue time.
+- `numExecutors` должен быть `1`. Форма отклоняет `oneShot=true` в сочетании с
+  `numExecutors > 1`, потому что one-shot retention терминирует агент после первой
+  завершённой сборки — это оборвёт любую другую сборку, выполняющуюся параллельно
+  на втором executor'е.
+- Если родительский шаблон (через `inheritFrom`) имеет `oneShot: true`, дочерние
+  шаблоны наследуют этот флаг и не могут его отключить (тот же OR-merge, что и для
+  `privileged`).
+
+### Container Capabilities
+
+`capAdd` / `capDrop` пробрасывают Linux capabilities в `TaskSpec.ContainerSpec` агентского
+контейнера. Требуется Docker Engine 20.10 (API 1.41) или новее — старые версии Engine
+молча игнорируют эти поля.
+
+```yaml
+templates:
+  - name: "net-admin-agent"
+    image: "jenkins/inbound-agent:latest"
+    capAdd:
+      - "CAP_NET_ADMIN"
+    capDrop:
+      - "CAP_CHOWN"
+```
+
+Newline-separated строковая форма (`capAddString`) тоже принимается — для совместимости
+с существующими конфигурациями docker-swarm-plugin.
 
 ### Docker Secrets
 

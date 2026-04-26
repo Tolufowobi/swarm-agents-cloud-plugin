@@ -124,12 +124,13 @@ jenkins:
 | Field | Description |
 |-------|-------------|
 | `privileged` | Run with elevated privileges |
+| `oneShot` | Terminate the agent after a single completed build (requires `numExecutors=1`) |
 | `user` | Run as specific user (e.g., "1000:1000") |
 | `hostname` | Container hostname |
 | `entrypoint` | Custom container entrypoint |
 | `disableContainerArgs` | Don't pass args to entrypoint |
-| `capAddString` | Linux capabilities to add |
-| `capDropString` | Linux capabilities to drop |
+| `capAdd` / `capAddString` | Linux capabilities to add (requires Docker Engine 20.10+ / API 1.41+) |
+| `capDrop` / `capDropString` | Linux capabilities to drop (requires Docker Engine 20.10+ / API 1.41+) |
 | `dnsServersString` | Custom DNS servers |
 
 ### Template Inheritance
@@ -149,6 +150,53 @@ templates:
       - key: "MAVEN_OPTS"
         value: "-Xmx1g"
 ```
+
+### Ephemeral / One-Shot Agents
+
+Set `oneShot: true` on a template to make agents self-destruct immediately after a single
+completed build, instead of being kept alive for the idle-timeout window. Useful when each
+build needs a guaranteed-clean filesystem and process state (security-sensitive jobs,
+workloads that leak temporary state, etc.).
+
+```yaml
+templates:
+  - name: "ephemeral-build"
+    image: "jenkins/inbound-agent:latest"
+    labelString: "ephemeral"
+    numExecutors: 1            # Must be 1 with oneShot=true
+    oneShot: true
+    idleTimeoutMinutes: 1      # Fallback for the rare "agent connected but no build dispatched" case
+```
+
+**Trade-offs:**
+
+- Each build pays the full container provisioning cost (image pull + agent connection
+  handshake), adding tens of seconds to queue time.
+- `numExecutors` must be `1`. The form rejects `oneShot=true` combined with
+  `numExecutors > 1` because the one-shot retention strategy terminates the agent after
+  the first completed build, which would abort any other build still running on a second
+  executor.
+- If a parent template (referenced via `inheritFrom`) has `oneShot: true`, child templates
+  inherit it and cannot disable it (same OR-merge as `privileged`).
+
+### Container Capabilities
+
+`capAdd` / `capDrop` propagate Linux capabilities to the agent container's
+`TaskSpec.ContainerSpec`. Docker Engine 20.10 (API 1.41) or newer is required — older
+Engine versions silently ignore these fields.
+
+```yaml
+templates:
+  - name: "net-admin-agent"
+    image: "jenkins/inbound-agent:latest"
+    capAdd:
+      - "CAP_NET_ADMIN"
+    capDrop:
+      - "CAP_CHOWN"
+```
+
+The newline-separated string form (`capAddString`) is also accepted for compatibility
+with existing docker-swarm-plugin configurations.
 
 ### Docker Secrets
 
