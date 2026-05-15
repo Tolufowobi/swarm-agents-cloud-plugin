@@ -6,12 +6,16 @@ import io.jenkins.plugins.casc.misc.JenkinsConfiguredWithCodeRule;
 import io.jenkins.plugins.casc.misc.junit.jupiter.WithJenkinsConfiguredWithCode;
 import org.junit.jupiter.api.Test;
 
+import org.yaml.snakeyaml.Yaml;
+
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -61,13 +65,17 @@ class CascExportTest {
     @ConfiguredWithCode("simple-config.yaml")
     void exportContainsNoDuplicateAliasKeysPerTemplate(JenkinsConfiguredWithCodeRule j) throws Exception {
         String yaml = exportAsYaml();
-        String swarmBlock = extractSwarmAgentsCloudBlock(yaml);
-        Map<String, Integer> keyCount = countKeysAtIndent(swarmBlock, "            ");
+        Set<String> templateKeys = parseTemplateKeys(yaml);
+
+        // Sanity check: the template node was actually located and non-trivial.
+        // Without this, an empty key set would make the alias assertions vacuously true.
+        assertFalse(templateKeys.isEmpty(),
+                "Failed to locate template keys in exported YAML — fixture probably changed.\n" + yaml);
 
         for (String[] pair : ALIAS_PAIRS) {
-            int alias = keyCount.getOrDefault(pair[0], 0);
-            int canonical = keyCount.getOrDefault(pair[1], 0);
-            assertFalse(alias > 0 && canonical > 0,
+            boolean hasAlias = templateKeys.contains(pair[0]);
+            boolean hasCanonical = templateKeys.contains(pair[1]);
+            assertFalse(hasAlias && hasCanonical,
                     "Alias '" + pair[0] + "' and canonical '" + pair[1]
                             + "' both present in exported template — duplicate from aliased @DataBoundSetter.\n"
                             + yaml);
@@ -121,34 +129,27 @@ class CascExportTest {
         return out.toString(StandardCharsets.UTF_8);
     }
 
-    /** Extracts the lines from {@code - swarmAgentsCloud:} up to the next top-level dash, inclusive. */
-    private static String extractSwarmAgentsCloudBlock(String yaml) {
-        int start = yaml.indexOf("- swarmAgentsCloud:");
-        if (start < 0) {
-            fail("swarmAgentsCloud entry not found in export:\n" + yaml);
-        }
-        int end = yaml.indexOf("\n  - ", start + 1);
-        if (end < 0) {
-            end = yaml.length();
-        }
-        return yaml.substring(start, end);
-    }
-
     /**
-     * Counts how many times each YAML key appears at the given indent level inside the given block.
-     * Used to detect duplicated alias attributes side-by-side at the template indentation.
+     * Parses the exported YAML and returns the set of keys present on the first
+     * {@code swarmAgentsCloud} template, regardless of indentation. Using a real YAML parser
+     * here avoids the brittleness of counting raw indent levels: if CasC changes its
+     * indent / flow style, the assertions still mean what they say.
      */
-    private static Map<String, Integer> countKeysAtIndent(String block, String indent) {
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        for (String line : block.split("\n")) {
-            if (!line.startsWith(indent)) continue;
-            String rest = line.substring(indent.length());
-            if (rest.isEmpty() || rest.charAt(0) == ' ' || rest.charAt(0) == '-') continue;
-            int colon = rest.indexOf(':');
-            if (colon <= 0) continue;
-            String key = rest.substring(0, colon).trim();
-            counts.merge(key, 1, Integer::sum);
-        }
-        return counts;
+    @SuppressWarnings("unchecked")
+    private static Set<String> parseTemplateKeys(String yaml) {
+        Object parsed = new Yaml().load(yaml);
+        Map<String, Object> root = (Map<String, Object>) parsed;
+        if (root == null) return Collections.emptySet();
+        Map<String, Object> jenkins = (Map<String, Object>) root.get("jenkins");
+        if (jenkins == null) return Collections.emptySet();
+        List<Object> clouds = (List<Object>) jenkins.get("clouds");
+        if (clouds == null || clouds.isEmpty()) return Collections.emptySet();
+        Map<String, Object> first = (Map<String, Object>) clouds.get(0);
+        Map<String, Object> swarmCloud = (Map<String, Object>) first.get("swarmAgentsCloud");
+        if (swarmCloud == null) return Collections.emptySet();
+        List<Object> templates = (List<Object>) swarmCloud.get("templates");
+        if (templates == null || templates.isEmpty()) return Collections.emptySet();
+        Map<String, Object> tpl = (Map<String, Object>) templates.get(0);
+        return new LinkedHashSet<>(tpl.keySet());
     }
 }

@@ -25,11 +25,17 @@ class SwarmDeclarativeAgentScript extends DeclarativeAgentScript2<SwarmDeclarati
 
     @Override
     void run(Closure body) {
-        Map<String, Object> args = [:]
         String resolvedCloud = describable.resolveCloudName()
-        if (resolvedCloud) {
-            args.cloud = resolvedCloud
+        if (!resolvedCloud) {
+            // resolveCloudName() returns null when no SwarmCloud is configured at all OR when
+            // multiple are configured and the directive did not pick one. Raise a clear error
+            // here rather than letting SwarmAgentStep emit "Swarm cloud not found: null".
+            throw new IllegalArgumentException(
+                    "swarmAgent: cannot resolve Docker Swarm cloud. " +
+                    "Either configure exactly one Swarm cloud or set 'cloud' explicitly in the directive.")
         }
+
+        Map<String, Object> args = [cloud: resolvedCloud]
         if (describable.template) {
             args.template = describable.template
         }
