@@ -10,6 +10,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -111,6 +112,33 @@ class CascExportTest {
         assertEquals(beforeMaxInstances, afterTpl.getMaxInstances());
     }
 
+    /**
+     * Same alias-duplicate guard as the simple-config test, but against full-config.yaml — which
+     * uses every alias key the new configurator strips on export ({@code label}, {@code workingDir},
+     * {@code hostBinds}, {@code envVars}). Exercises all three templates in the fixture, not just
+     * the first.
+     */
+    @Test
+    @ConfiguredWithCode("full-config.yaml")
+    void exportOfFullConfigHasNoDuplicateAliasKeysInAnyTemplate(JenkinsConfiguredWithCodeRule j) throws Exception {
+        String yaml = exportAsYaml();
+        List<Set<String>> allTemplateKeys = parseAllTemplateKeys(yaml);
+
+        assertEquals(3, allTemplateKeys.size(),
+                "full-config.yaml defines 3 templates; export must preserve them all.\n" + yaml);
+
+        for (int i = 0; i < allTemplateKeys.size(); i++) {
+            Set<String> keys = allTemplateKeys.get(i);
+            assertFalse(keys.isEmpty(),
+                    "template[" + i + "] keys must not be empty in export.\n" + yaml);
+            for (String[] pair : ALIAS_PAIRS) {
+                assertFalse(keys.contains(pair[0]) && keys.contains(pair[1]),
+                        "template[" + i + "]: alias '" + pair[0] + "' and canonical '" + pair[1]
+                                + "' both present.\n" + yaml);
+            }
+        }
+    }
+
     @Test
     void exportOfCloudWithoutTemplatesProducesOnlyName(JenkinsConfiguredWithCodeRule j) throws Exception {
         SwarmCloud cloud = new SwarmCloud("no-templates");
@@ -135,6 +163,27 @@ class CascExportTest {
      * here avoids the brittleness of counting raw indent levels: if CasC changes its
      * indent / flow style, the assertions still mean what they say.
      */
+    @SuppressWarnings("unchecked")
+    private static List<Set<String>> parseAllTemplateKeys(String yaml) {
+        Object parsed = new Yaml().load(yaml);
+        Map<String, Object> root = (Map<String, Object>) parsed;
+        if (root == null) return Collections.emptyList();
+        Map<String, Object> jenkins = (Map<String, Object>) root.get("jenkins");
+        if (jenkins == null) return Collections.emptyList();
+        List<Object> clouds = (List<Object>) jenkins.get("clouds");
+        if (clouds == null || clouds.isEmpty()) return Collections.emptyList();
+        Map<String, Object> first = (Map<String, Object>) clouds.get(0);
+        Map<String, Object> swarmCloud = (Map<String, Object>) first.get("swarmAgentsCloud");
+        if (swarmCloud == null) return Collections.emptyList();
+        List<Object> templates = (List<Object>) swarmCloud.get("templates");
+        if (templates == null) return Collections.emptyList();
+        List<Set<String>> result = new ArrayList<>();
+        for (Object tpl : templates) {
+            result.add(new LinkedHashSet<>(((Map<String, Object>) tpl).keySet()));
+        }
+        return result;
+    }
+
     @SuppressWarnings("unchecked")
     private static Set<String> parseTemplateKeys(String yaml) {
         Object parsed = new Yaml().load(yaml);
