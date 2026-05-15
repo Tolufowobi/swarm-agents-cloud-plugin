@@ -3,6 +3,7 @@ package io.jenkins.plugins.swarmcloud.pipeline;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import hudson.Util;
+import hudson.model.Item;
 import hudson.slaves.Cloud;
 import hudson.util.ListBoxModel;
 import io.jenkins.plugins.swarmcloud.SwarmAgentTemplate;
@@ -12,8 +13,10 @@ import org.jenkinsci.Symbol;
 import org.jenkinsci.plugins.pipeline.modeldefinition.agent.DeclarativeAgentDescriptor;
 import org.jenkinsci.plugins.pipeline.modeldefinition.agent.RetryableDeclarativeAgent;
 import org.jenkinsci.plugins.variant.OptionalExtension;
+import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.verb.POST;
 
 /**
  * Declarative Pipeline agent for Docker Swarm.
@@ -227,9 +230,24 @@ public class SwarmDeclarativeAgent extends RetryableDeclarativeAgent<SwarmDeclar
             return "Docker Swarm Agent";
         }
 
+        /**
+         * Populates the "Cloud" dropdown in the declarative agent UI.
+         *
+         * <p>Annotated with {@link POST} and gated on {@link Item#READ} (or {@link Jenkins#READ} when
+         * invoked outside a job context) to satisfy Jenkins security best practices: callers without
+         * read access to the surrounding item get an empty dropdown rather than a glimpse at the
+         * configured cloud names. See CodeQL rules {@code jenkins/csrf} and
+         * {@code jenkins/no-permission-check}.</p>
+         */
+        @POST
         @SuppressWarnings("unused") // used by Jelly form
-        public ListBoxModel doFillCloudItems() {
+        public ListBoxModel doFillCloudItems(@AncestorInPath @Nullable Item item) {
             ListBoxModel items = new ListBoxModel();
+            if (item == null) {
+                Jenkins.get().checkPermission(Jenkins.READ);
+            } else {
+                item.checkPermission(Item.READ);
+            }
             items.add("(auto)", "");
             Jenkins jenkins = Jenkins.getInstanceOrNull();
             if (jenkins != null) {

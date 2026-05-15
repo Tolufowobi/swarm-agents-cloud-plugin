@@ -183,7 +183,8 @@ class SwarmDeclarativeAgentTest {
         jenkins.jenkins.clouds.add(new SwarmCloud("second"));
 
         SwarmDeclarativeAgent.DescriptorImpl descriptor = new SwarmDeclarativeAgent.DescriptorImpl();
-        var items = descriptor.doFillCloudItems();
+        // null Item is the no-job-context path; falls back to Jenkins.READ, granted to anonymous by default.
+        var items = descriptor.doFillCloudItems(null);
 
         assertNotNull(items);
         // First entry is the "(auto)" sentinel mapping to "".
