@@ -378,6 +378,65 @@ pipeline {
 }
 ```
 
+## Image Requirements / Custom Images
+
+When the plugin provisions an inbound agent, it passes Jenkins connection details to the
+container in **two parallel ways** so most images "just work":
+
+- **Environment variables** (always set):
+  - `JENKINS_URL`, `JENKINS_AGENT_NAME`, `JENKINS_SECRET`, `JENKINS_AGENT_WORKDIR`
+  - `JENKINS_WEB_SOCKET=true` (WebSocket inbound protocol)
+  - Aliases for compatibility: `JNLP_URL`, `JENKINS_JNLP_URL`,
+    `DOCKER_SWARM_PLUGIN_JENKINS_AGENT_JNLP_URL`, `DOCKER_SWARM_PLUGIN_JENKINS_AGENT_SECRET`
+- **Command-line args** (positional): `[<JENKINS_URL>, <SECRET>, <AGENT_NAME>]`, appended
+  to the image's `ENTRYPOINT`.
+
+### Recommended: the official inbound-agent image
+
+```yaml
+templates:
+  - name: default
+    image: "jenkins/inbound-agent:alpine"   # or :latest, :jdk21, ...
+    labelString: "docker"
+```
+
+`jenkins/inbound-agent` ships with `ENTRYPOINT ["/usr/local/bin/jenkins-agent"]` that
+accepts the positional args correctly — no extra configuration needed.
+
+### Custom images without a Jenkins-compatible ENTRYPOINT
+
+If your image has **no `ENTRYPOINT`** (or one that does not understand the
+`url secret name` argument convention), the positional args become the container's whole
+command. Docker will then try to `exec` the URL as a binary and fail with:
+
+```text
+OCI runtime create failed: ... exec: "https://<jenkins>/": no such file or directory
+```
+
+Two equivalent fixes — pick whichever fits your image:
+
+**Option A — let the plugin set a real ENTRYPOINT** (`entrypoint:` takes a free-form
+command, args are skipped):
+
+```yaml
+templates:
+  - name: custom
+    image: "my-registry/my-agent:1.2.3"
+    entrypoint: "/usr/local/bin/my-startup.sh"
+```
+
+**Option B — use env vars only** (the image must read `$JENKINS_URL`, `$JENKINS_SECRET`,
+`$JENKINS_AGENT_NAME` itself):
+
+```yaml
+templates:
+  - name: custom
+    image: "my-registry/my-agent:1.2.3"
+    disableContainerArgs: true   # skip positional [url, secret, name] args
+```
+
+`disableContainerArgs` is the safest default for slim or non-standard images.
+
 ## REST API
 
 Base URL: `http://jenkins/swarm-api/`
@@ -422,6 +481,7 @@ Metrics: `swarm_agents_total`, `swarm_agents_active`, `swarm_nodes_total`, `swar
 | Error | Solution |
 |-------|----------|
 | "Unsupported protocol scheme: https" | Use `tcp://` not `https://` |
+| `OCI runtime create failed: ... exec: "https://...": no such file or directory` | Image has no `ENTRYPOINT`. Use `jenkins/inbound-agent`, set `entrypoint:` on the template, or set `disableContainerArgs: true`. See [Image Requirements](#image-requirements--custom-images). The plugin also surfaces a `HINT:` line in the build log on this failure. |
 | "Connection refused" | Check Docker API is exposed |
 | "TLS handshake failed" | Configure Docker Server Credentials |
 | "This node is not a swarm manager" | Run `docker swarm init` |

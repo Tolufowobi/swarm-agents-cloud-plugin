@@ -379,6 +379,65 @@ pipeline {
 }
 ```
 
+## Требования к Docker-образу / кастомные образы
+
+При provisioning'е inbound-агента плагин передаёт реквизиты подключения к Jenkins
+**двумя способами одновременно** — большинство образов работают «из коробки»:
+
+- **Переменные окружения** (выставляются всегда):
+  - `JENKINS_URL`, `JENKINS_AGENT_NAME`, `JENKINS_SECRET`, `JENKINS_AGENT_WORKDIR`
+  - `JENKINS_WEB_SOCKET=true` (WebSocket inbound)
+  - Алиасы для совместимости: `JNLP_URL`, `JENKINS_JNLP_URL`,
+    `DOCKER_SWARM_PLUGIN_JENKINS_AGENT_JNLP_URL`, `DOCKER_SWARM_PLUGIN_JENKINS_AGENT_SECRET`
+- **Аргументы командной строки** (позиционные): `[<JENKINS_URL>, <SECRET>, <AGENT_NAME>]`,
+  добавляются к `ENTRYPOINT` образа.
+
+### Рекомендуется: официальный inbound-agent
+
+```yaml
+templates:
+  - name: default
+    image: "jenkins/inbound-agent:alpine"   # или :latest, :jdk21, ...
+    labelString: "docker"
+```
+
+У `jenkins/inbound-agent` уже есть `ENTRYPOINT ["/usr/local/bin/jenkins-agent"]`,
+который корректно принимает позиционные аргументы — никакой дополнительной настройки не нужно.
+
+### Кастомные образы без Jenkins-совместимого ENTRYPOINT
+
+Если у образа **нет `ENTRYPOINT`** (или он не понимает соглашение
+`url secret name`), позиционные аргументы становятся полной командой контейнера. Docker
+попытается выполнить URL как бинарь и упадёт:
+
+```text
+OCI runtime create failed: ... exec: "https://<jenkins>/": no such file or directory
+```
+
+Два эквивалентных решения — выбирайте подходящее:
+
+**Вариант A — задать ENTRYPOINT в шаблоне** (поле `entrypoint:` принимает свободную команду,
+позиционные args при этом не передаются):
+
+```yaml
+templates:
+  - name: custom
+    image: "my-registry/my-agent:1.2.3"
+    entrypoint: "/usr/local/bin/my-startup.sh"
+```
+
+**Вариант B — использовать только env vars** (образ сам читает `$JENKINS_URL`,
+`$JENKINS_SECRET`, `$JENKINS_AGENT_NAME`):
+
+```yaml
+templates:
+  - name: custom
+    image: "my-registry/my-agent:1.2.3"
+    disableContainerArgs: true   # отключить позиционные [url, secret, name]
+```
+
+`disableContainerArgs` — самый безопасный дефолт для slim или нестандартных образов.
+
 ## REST API
 
 Базовый URL: `http://jenkins/swarm-api/`
@@ -423,6 +482,7 @@ http://jenkins/swarm-api/prometheus
 | Ошибка | Решение |
 |--------|---------|
 | "Unsupported protocol scheme: https" | Используйте `tcp://` вместо `https://` |
+| `OCI runtime create failed: ... exec: "https://...": no such file or directory` | У образа нет `ENTRYPOINT`. Используйте `jenkins/inbound-agent`, задайте `entrypoint:` в шаблоне или укажите `disableContainerArgs: true`. См. [Требования к Docker-образу](#требования-к-docker-образу--кастомные-образы). В лог сборки плагин также пишет строку `HINT:` с подсказкой при этой ошибке. |
 | "Connection refused" | Проверьте, что Docker API открыт |
 | "TLS handshake failed" | Настройте Docker Server Credentials |
 | "This node is not a swarm manager" | Выполните `docker swarm init` |

@@ -9,6 +9,7 @@ import hudson.model.TaskListener;
 import hudson.slaves.ComputerLauncher;
 import hudson.slaves.JNLPLauncher;
 import hudson.slaves.SlaveComputer;
+import io.jenkins.plugins.swarmcloud.diagnostics.ContainerStartupDiagnostics;
 import jenkins.model.Jenkins;
 import jenkins.slaves.JnlpSlaveAgentProtocol;
 import static io.jenkins.plugins.swarmcloud.security.InputValidator.isNotBlank;
@@ -16,9 +17,11 @@ import static io.jenkins.plugins.swarmcloud.security.InputValidator.isNotBlank;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -121,6 +124,7 @@ public class SwarmComputerLauncher extends JNLPLauncher {
         long startTime = System.currentTimeMillis();
         long timeoutMs = timeoutSeconds * 1000L;
         int checkCount = 0;
+        Set<String> reportedTaskErrors = new HashSet<>();
 
         while (System.currentTimeMillis() - startTime < timeoutMs) {
             if (computer.isOnline()) {
@@ -139,13 +143,15 @@ public class SwarmComputerLauncher extends JNLPLauncher {
                 }
             }
 
-            // Check service status periodically
-            if (++checkCount % 6 == 0) { // Every 30 seconds
+            // Check service status periodically. Run more often early so OCI / "exec failed"
+            // diagnostics surface within the first ~10 seconds instead of after 30 — those
+            // errors are almost always visible immediately after task creation.
+            if (++checkCount % 2 == 0) { // Every 10 seconds
                 SwarmAgent agent = (SwarmAgent) computer.getNode();
                 if (agent != null) {
                     SwarmCloud cloud = agent.getCloud();
                     if (cloud != null) {
-                        checkServiceHealth(cloud, agent.getServiceId(), logger);
+                        checkServiceHealth(cloud, agent.getServiceId(), logger, reportedTaskErrors);
                     }
                 }
             }
@@ -184,13 +190,30 @@ public class SwarmComputerLauncher extends JNLPLauncher {
     }
 
     /**
-     * Checks the health of the Docker Swarm service.
+     * Checks the health of the Docker Swarm service and surfaces actionable hints for known
+     * container-startup failures (e.g. image without {@code ENTRYPOINT} → Jenkins URL exec'd
+     * as binary). Each unique task-status error is reported at most once per launch attempt
+     * via {@code reportedTaskErrors}.
      */
-    private void checkServiceHealth(SwarmCloud cloud, String serviceId, PrintStream logger) {
+    private void checkServiceHealth(SwarmCloud cloud, String serviceId, PrintStream logger,
+                                    Set<String> reportedTaskErrors) {
         try {
-            var service = cloud.getDockerClient().getService(serviceId);
+            var dockerClient = cloud.getDockerClient();
+            var service = dockerClient.getService(serviceId);
             if (service == null) {
                 logger.println("WARNING: Service not found - may have been terminated");
+                return;
+            }
+            for (var task : dockerClient.getServiceTasks(serviceId)) {
+                var status = task.getStatus();
+                if (status == null) continue;
+                String err = status.getErr();
+                if (err == null || err.isBlank() || !reportedTaskErrors.add(err)) continue;
+                logger.println("ERROR: Container failed to start: " + err);
+                String hint = ContainerStartupDiagnostics.hintFor(err);
+                if (hint != null) {
+                    logger.println("HINT: " + hint);
+                }
             }
         } catch (Exception e) {
             LOGGER.log(Level.FINE, "Error checking service health", e);
