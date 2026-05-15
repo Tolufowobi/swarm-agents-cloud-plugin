@@ -321,6 +321,49 @@ templates:
 
 ## Pipeline DSL
 
+### Declarative pipeline (`agent { swarmAgent { ... } }`)
+
+Директива `swarmAgent` зарегистрирована в Pipeline Syntax → Declarative
+Directive Generator → `agent`, поэтому плагин работает как drop-in замена
+классического `docker-swarm-plugin`:
+
+```groovy
+pipeline {
+    agent {
+        swarmAgent {
+            cloud 'docker-swarm'
+            template 'maven'
+            label 'maven java'
+        }
+    }
+    stages {
+        stage('Build') {
+            steps { sh 'mvn clean package' }
+        }
+    }
+}
+```
+
+Если настроен ровно один Docker Swarm-облако, поле `cloud` можно опустить.
+Если не задана `label`, используется `labelString` шаблона. Поддерживается
+inline-конфигурация без шаблона:
+
+```groovy
+pipeline {
+    agent {
+        swarmAgent {
+            image 'jenkins/inbound-agent:alpine'
+            label 'docker'
+            cpuLimit '2.0'
+            memoryLimit '4g'
+        }
+    }
+    stages { ... }
+}
+```
+
+### Scripted pipeline (`swarmAgent { ... }` шаг)
+
 ```groovy
 pipeline {
     agent none

@@ -104,6 +104,18 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Declarative Pipeline support: needed for `agent { swarmAgent { ... } }` -->
+        <dependency>
+            <groupId>org.jenkinsci.plugins</groupId>
+            <artifactId>pipeline-model-definition</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.jenkinsci.plugins</groupId>
+            <artifactId>pipeline-model-api</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Configuration as Code -->
         <dependency>
             <groupId>io.jenkins</groupId>
