@@ -222,7 +222,7 @@ public class SwarmCloud extends Cloud {
      * Checks if we can provision more agents.
      */
     public boolean canProvision() {
-        int currentAgents = countCurrentAgents();
+        int currentAgents = countProvisionedOrPlannedAgents();
         return currentAgents < maxConcurrentAgents;
     }
 
@@ -245,6 +245,15 @@ public class SwarmCloud extends Cloud {
         return count;
     }
 
+    /**
+     * Counts active and in-flight agents reserved by this cloud.
+     */
+    public int countProvisionedOrPlannedAgents() {
+        return getTemplates().stream()
+                .mapToInt(SwarmAgentTemplate::getCurrentInstances)
+                .sum();
+    }
+
     @Override
     public boolean canProvision(@NonNull Cloud.CloudState state) {
         Jenkins jenkins = Jenkins.getInstanceOrNull();
@@ -257,7 +266,7 @@ public class SwarmCloud extends Cloud {
         LOGGER.log(Level.FINE, "canProvision called for cloud ''{0}'' with label: {1}, templates count: {2}",
                 new Object[]{name, label, templates != null ? templates.size() : 0});
 
-        int currentAgentCount = countCurrentAgents();
+        int currentAgentCount = countProvisionedOrPlannedAgents();
         if (currentAgentCount >= maxConcurrentAgents) {
             LOGGER.log(Level.FINE, "canProvision=false: max agents reached ({0}/{1})",
                     new Object[]{currentAgentCount, maxConcurrentAgents});
@@ -316,9 +325,17 @@ public class SwarmCloud extends Cloud {
             return Collections.emptyList();
         }
 
-        int availableCapacity = maxConcurrentAgents - countCurrentAgents();
-        int toProvision = Math.min(excessWorkload, availableCapacity);
+        boolean oneShotTemplate = template.resolve().isOneShot();
+        int currentTemplateInstances = template.getCurrentInstances();
+        int workloadToProvision = oneShotTemplate
+                ? Math.max(0, excessWorkload - currentTemplateInstances)
+                : excessWorkload;
+        int availableCapacity = maxConcurrentAgents - countProvisionedOrPlannedAgents();
+        int toProvision = Math.min(workloadToProvision, availableCapacity);
         toProvision = Math.min(toProvision, template.getAvailableCapacity());
+        if (oneShotTemplate) {
+            toProvision = Math.min(toProvision, 1);
+        }
 
         // Apply rate limit to number of provisions
         if (rateLimitEnabled) {
@@ -330,10 +347,11 @@ public class SwarmCloud extends Cloud {
                 new Object[]{toProvision, template.getName()});
 
         for (int i = 0; i < toProvision; i++) {
+            template.incrementInstances();
             String agentName = template.generateAgentName();
             plannedNodes.add(new NodeProvisioner.PlannedNode(
                     agentName,
-                    Computer.threadPoolForRemoting.submit(new ProvisioningCallback(this, template, agentName)),
+                    Computer.threadPoolForRemoting.submit(new ProvisioningCallback(this, template, agentName, true)),
                     template.getNumExecutors()
             ));
             // Record provision for rate limiting
@@ -352,11 +370,14 @@ public class SwarmCloud extends Cloud {
         private final SwarmCloud cloud;
         private final SwarmAgentTemplate template;
         private final String agentName;
+        private final boolean reservedTemplateInstance;
 
-        ProvisioningCallback(SwarmCloud cloud, SwarmAgentTemplate template, String agentName) {
+        ProvisioningCallback(SwarmCloud cloud, SwarmAgentTemplate template, String agentName,
+                             boolean reservedTemplateInstance) {
             this.cloud = cloud;
             this.template = template;
             this.agentName = agentName;
+            this.reservedTemplateInstance = reservedTemplateInstance;
         }
 
         @Override
@@ -373,71 +394,82 @@ public class SwarmCloud extends Cloud {
 
             Exception lastException = null;
 
-            for (int attempt = 0; attempt <= maxRetries; attempt++) {
-                try {
-                    if (attempt > 0) {
-                        // Exponential backoff: baseDelay * 2^(attempt-1)
-                        long delayMs = baseDelayMs * (1L << (attempt - 1));
-                        // Cap at 30 seconds
-                        delayMs = Math.min(delayMs, 30000L);
-                        LOGGER.log(Level.FINE, "Retry attempt {0}/{1} for agent {2}, waiting {3}ms",
-                                new Object[]{attempt, maxRetries, agentName, delayMs});
-                        Thread.sleep(delayMs);
+            boolean provisioned = false;
+            try {
+                for (int attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                        if (attempt > 0) {
+                            // Exponential backoff: baseDelay * 2^(attempt-1)
+                            long delayMs = baseDelayMs * (1L << (attempt - 1));
+                            // Cap at 30 seconds
+                            delayMs = Math.min(delayMs, 30000L);
+                            LOGGER.log(Level.FINE, "Retry attempt {0}/{1} for agent {2}, waiting {3}ms",
+                                    new Object[]{attempt, maxRetries, agentName, delayMs});
+                            Thread.sleep(delayMs);
+                        }
+
+                        // Create Docker Swarm service
+                        String serviceId = cloud.getDockerClient().createService(
+                                agentName,
+                                resolvedTemplate,
+                                cloud.getEffectiveJenkinsUrl(),
+                                SwarmComputerLauncher.getAgentSecret(agentName),
+                                cloud.getSwarmNetwork(),
+                                cloud.name,
+                                !reservedTemplateInstance
+                        );
+
+                        LOGGER.log(Level.FINE, "Created Docker Swarm service: {0} for agent: {1}",
+                                new Object[]{serviceId, agentName});
+
+                        // Create Jenkins agent with idle timeout from template
+                        SwarmAgent agent = new SwarmAgent(
+                                agentName,
+                                resolvedTemplate,
+                                cloud.name,
+                                serviceId,
+                                idleTimeoutMinutes
+                        );
+
+                        // Reset failure count on success
+                        if (cloud.isRateLimitEnabled()) {
+                            ProvisionRateLimiter.resetFailures(cloud.name);
+                        }
+
+                        // Audit log success
+                        SwarmAuditLog.logProvision(cloud.name, template.getName(), agentName, serviceId);
+
+                        provisioned = true;
+                        return agent;
+
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw e;
+                    } catch (Exception e) {
+                        lastException = e;
+                        LOGGER.log(Level.WARNING, "Provision attempt {0}/{1} failed for agent {2}: {3}",
+                                new Object[]{attempt + 1, maxRetries + 1, agentName, e.getMessage()});
                     }
+                }
 
-                    // Create Docker Swarm service
-                    String serviceId = cloud.getDockerClient().createService(
-                            agentName,
-                            resolvedTemplate,
-                            cloud.getEffectiveJenkinsUrl(),
-                            cloud.getSwarmNetwork()
-                    );
+                // All retries exhausted
+                LOGGER.log(Level.SEVERE, "Failed to provision agent after " + (maxRetries + 1) + " attempts: " + agentName, lastException);
 
-                    LOGGER.log(Level.FINE, "Created Docker Swarm service: {0} for agent: {1}",
-                            new Object[]{serviceId, agentName});
+                // Record failure for rate limiting
+                if (cloud.isRateLimitEnabled()) {
+                    ProvisionRateLimiter.recordFailure(cloud.name);
+                }
 
-                    // Create Jenkins agent with idle timeout from template
-                    SwarmAgent agent = new SwarmAgent(
-                            agentName,
-                            resolvedTemplate,
-                            cloud.name,
-                            serviceId,
-                            idleTimeoutMinutes
-                    );
+                // Audit log failure
+                String errorMsg = lastException != null ? lastException.getMessage() : "Unknown error";
+                SwarmAuditLog.logProvisionFailure(cloud.name, template.getName(), errorMsg);
 
-                    // Reset failure count on success
-                    if (cloud.isRateLimitEnabled()) {
-                        ProvisionRateLimiter.resetFailures(cloud.name);
-                    }
-
-                    // Audit log success
-                    SwarmAuditLog.logProvision(cloud.name, template.getName(), agentName, serviceId);
-
-                    return agent;
-
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw e;
-                } catch (Exception e) {
-                    lastException = e;
-                    LOGGER.log(Level.WARNING, "Provision attempt {0}/{1} failed for agent {2}: {3}",
-                            new Object[]{attempt + 1, maxRetries + 1, agentName, e.getMessage()});
+                throw lastException != null ? lastException : new Exception("Failed to provision agent");
+            } finally {
+                if (reservedTemplateInstance && !provisioned) {
+                    template.decrementInstances();
                 }
             }
-
-            // All retries exhausted
-            LOGGER.log(Level.SEVERE, "Failed to provision agent after " + (maxRetries + 1) + " attempts: " + agentName, lastException);
-
-            // Record failure for rate limiting
-            if (cloud.isRateLimitEnabled()) {
-                ProvisionRateLimiter.recordFailure(cloud.name);
-            }
-
-            // Audit log failure
-            String errorMsg = lastException != null ? lastException.getMessage() : "Unknown error";
-            SwarmAuditLog.logProvisionFailure(cloud.name, template.getName(), errorMsg);
-
-            throw lastException != null ? lastException : new Exception("Failed to provision agent");
         }
     }
 
