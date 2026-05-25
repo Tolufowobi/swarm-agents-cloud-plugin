@@ -7,6 +7,7 @@ import hudson.slaves.Cloud;
 import io.jenkins.plugins.swarmcloud.SwarmAgent;
 import io.jenkins.plugins.swarmcloud.SwarmAgentTemplate;
 import io.jenkins.plugins.swarmcloud.SwarmCloud;
+import io.jenkins.plugins.swarmcloud.SwarmComputerLauncher;
 import io.jenkins.plugins.swarmcloud.monitoring.ClusterMonitor;
 import io.jenkins.plugins.swarmcloud.monitoring.ClusterStatus;
 import io.jenkins.plugins.swarmcloud.monitoring.SwarmAuditLog;
@@ -263,7 +264,9 @@ public class SwarmRestApi implements RootAction {
                     agentName,
                     tmpl,
                     swarmCloud.getEffectiveJenkinsUrl(),
-                    swarmCloud.getSwarmNetwork()
+                    SwarmComputerLauncher.getAgentSecret(agentName),
+                    swarmCloud.getSwarmNetwork(),
+                    swarmCloud.name
             );
 
             SwarmAgent agent = new SwarmAgent(agentName, tmpl, swarmCloud.name, serviceId);

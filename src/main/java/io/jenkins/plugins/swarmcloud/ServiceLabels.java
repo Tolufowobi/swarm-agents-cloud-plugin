@@ -24,6 +24,9 @@ public final class ServiceLabels {
     /** Timestamp (millis) when the service was created. */
     public static final String CREATED = "jenkins.created";
 
+    /** Whether the service belongs to a one-shot agent template. */
+    public static final String ONE_SHOT = "jenkins.one-shot";
+
     /** The cloud name value used in CLOUD label. */
     public static final String CLOUD_NAME = "swarm-agents-cloud";
 }

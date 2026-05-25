@@ -8,6 +8,7 @@ import hudson.slaves.Cloud;
 import io.jenkins.plugins.swarmcloud.SwarmAgent;
 import io.jenkins.plugins.swarmcloud.SwarmAgentTemplate;
 import io.jenkins.plugins.swarmcloud.SwarmCloud;
+import io.jenkins.plugins.swarmcloud.SwarmComputerLauncher;
 import io.jenkins.plugins.swarmcloud.monitoring.SwarmAuditLog;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
@@ -247,7 +248,9 @@ public class SwarmAgentStep extends Step implements Serializable {
                         agentName,
                         agentTemplate,
                         swarmCloud.getEffectiveJenkinsUrl(),
-                        swarmCloud.getSwarmNetwork()
+                        SwarmComputerLauncher.getAgentSecret(agentName),
+                        swarmCloud.getSwarmNetwork(),
+                        swarmCloud.name
                 );
 
                 logger.println("Created Docker Swarm service: " + serviceId);
