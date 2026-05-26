@@ -15,10 +15,12 @@ import hudson.Extension;
 import hudson.model.AsyncPeriodicWork;
 import hudson.model.TaskListener;
 import hudson.slaves.Cloud;
+import io.jenkins.plugins.swarmcloud.SwarmAgentTemplate;
 import io.jenkins.plugins.swarmcloud.SwarmCloud;
 import jenkins.model.Jenkins;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -120,8 +122,8 @@ public class ClusterMonitor extends AsyncPeriodicWork {
             status.setTotalMemory(totalMemory);
             status.setTotalCpu(totalCpu / 1_000_000_000.0);
 
-            List<Service> services = dockerClient.listJenkinsServices();
-            status.setActiveServices(services.size());
+            List<Service> services = dockerClient.listServicesForCloud(cloud.name);
+            List<Service> monitoredServices = new ArrayList<>();
 
             // Count services by state (not tasks)
             int runningServices = 0, pendingServices = 0, failedServices = 0;
@@ -215,10 +217,22 @@ public class ClusterMonitor extends AsyncPeriodicWork {
                     info.setState("unknown");
                 }
 
+                if ("complete".equals(info.getState()) && isOneShotService(cloud, service)) {
+                    LOGGER.log(Level.FINE, "Removing completed one-shot service: {0}", serviceId);
+                    try {
+                        dockerClient.removeService(serviceId);
+                        continue;
+                    } catch (RuntimeException e) {
+                        LOGGER.log(Level.WARNING, "Failed to remove completed one-shot service: " + serviceId, e);
+                    }
+                }
+
+                monitoredServices.add(service);
                 status.addService(info);
             }
 
             // Use service counts instead of task counts
+            status.setActiveServices(monitoredServices.size());
             status.setRunningTasks(runningServices);
             status.setPendingTasks(pendingServices);
             status.setFailedTasks(failedServices);
@@ -235,7 +249,7 @@ public class ClusterMonitor extends AsyncPeriodicWork {
             status.setLastUpdate(System.currentTimeMillis());
 
             // Synchronize template instance counters with actual service count
-            synchronizeTemplateCounters(cloud, services);
+            synchronizeTemplateCounters(cloud, monitoredServices);
 
         } catch (RuntimeException e) {
             // Catch runtime exceptions to prevent monitor from failing
@@ -244,6 +258,27 @@ public class ClusterMonitor extends AsyncPeriodicWork {
             status.setErrorMessage(e.getMessage());
         }
         return status;
+    }
+
+    private boolean isOneShotService(SwarmCloud cloud, Service service) {
+        var serviceSpec = service.getSpec();
+        Map<String, String> labels = serviceSpec != null ? serviceSpec.getLabels() : null;
+        if (labels == null) {
+            return false;
+        }
+
+        String oneShotLabel = labels.get(ServiceLabels.ONE_SHOT);
+        if (oneShotLabel != null) {
+            return Boolean.parseBoolean(oneShotLabel);
+        }
+
+        String templateName = labels.get(ServiceLabels.TEMPLATE);
+        if (templateName == null) {
+            return false;
+        }
+
+        SwarmAgentTemplate template = cloud.getTemplateByName(templateName);
+        return template != null && template.resolve().isOneShot();
     }
 
     @NonNull

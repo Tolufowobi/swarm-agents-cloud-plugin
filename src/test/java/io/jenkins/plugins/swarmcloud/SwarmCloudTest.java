@@ -1,11 +1,13 @@
 package io.jenkins.plugins.swarmcloud;
 
 import hudson.model.Label;
+import hudson.slaves.Cloud;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
+import java.util.Collection;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -118,5 +120,43 @@ class SwarmCloudTest {
     void testCountCurrentAgents() {
         // No agents initially
         assertEquals(0, cloud.countCurrentAgents());
+    }
+
+    @Test
+    void testCountProvisionedOrPlannedAgentsIncludesTemplateReservations() {
+        SwarmAgentTemplate template = new SwarmAgentTemplate("one-shot");
+        template.setImage("jenkins/inbound-agent:latest");
+        template.incrementInstances();
+        cloud.setTemplates(List.of(template));
+
+        assertEquals(0, cloud.countCurrentAgents());
+        assertEquals(1, cloud.countProvisionedOrPlannedAgents());
+    }
+
+    @Test
+    void testCanProvisionRespectsInFlightTemplateReservations() {
+        SwarmAgentTemplate template = new SwarmAgentTemplate("one-shot");
+        template.setImage("jenkins/inbound-agent:latest");
+        template.incrementInstances();
+        cloud.setMaxConcurrentAgents(1);
+        cloud.setTemplates(List.of(template));
+
+        assertFalse(cloud.canProvision(), "in-flight reservations should count against cloud capacity");
+    }
+
+    @Test
+    void testOneShotProvisionDoesNotCreateExtraAgentForReservedWorkload() {
+        SwarmAgentTemplate template = new SwarmAgentTemplate("one-shot");
+        template.setImage("jenkins/inbound-agent:latest");
+        template.setLabelString("one-shot");
+        template.setOneShot(true);
+        template.incrementInstances();
+        cloud.setTemplates(List.of(template));
+
+        Collection<hudson.slaves.NodeProvisioner.PlannedNode> plannedNodes =
+                cloud.provision(new Cloud.CloudState(Label.parseExpression("one-shot"), 0), 1);
+
+        assertTrue(plannedNodes.isEmpty(),
+                "one-shot templates should not provision an n+1 agent for already reserved workload");
     }
 }

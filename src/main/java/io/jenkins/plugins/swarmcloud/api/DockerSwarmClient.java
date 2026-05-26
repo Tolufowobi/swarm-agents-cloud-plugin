@@ -228,6 +228,44 @@ public class DockerSwarmClient implements Closeable {
                                 @NonNull String jenkinsUrl,
                                 @NonNull String secret,
                                 @Nullable String networkName) {
+        return createService(agentName, template, jenkinsUrl, secret, networkName, ServiceLabels.CLOUD_NAME);
+    }
+
+    /**
+     * Creates a Docker Swarm service for a Jenkins agent and labels it with
+     * the owning Jenkins cloud.
+     *
+     * @param agentName   Unique name for the agent
+     * @param template    Agent template configuration
+     * @param jenkinsUrl  URL for agents to connect to Jenkins
+     * @param secret      Secret for agent authentication
+     * @param networkName Docker network to attach (optional)
+     * @param cloudName   Jenkins cloud that owns the service
+     * @return Service ID
+     */
+    @NonNull
+    public String createService(@NonNull String agentName,
+                                @NonNull SwarmAgentTemplate template,
+                                @NonNull String jenkinsUrl,
+                                @NonNull String secret,
+                                @Nullable String networkName,
+                                @NonNull String cloudName) {
+        return createService(agentName, template, jenkinsUrl, secret, networkName, cloudName, true);
+    }
+
+    /**
+     * Creates a Docker Swarm service for a Jenkins agent.
+     *
+     * @param incrementTemplateInstances whether to increment the template's instance counter after service creation
+     */
+    @NonNull
+    public String createService(@NonNull String agentName,
+                                @NonNull SwarmAgentTemplate template,
+                                @NonNull String jenkinsUrl,
+                                @NonNull String secret,
+                                @Nullable String networkName,
+                                @NonNull String cloudName,
+                                boolean incrementTemplateInstances) {
 
         LOGGER.log(Level.FINE, "Creating service for agent: {0}, template: {1}, image: {2}",
                 new Object[]{agentName, template.getName(), template.getImage()});
@@ -325,8 +363,9 @@ public class DockerSwarmClient implements Closeable {
         labels.put(ServiceLabels.AGENT, "true");
         labels.put(ServiceLabels.AGENT_NAME, agentName);
         labels.put(ServiceLabels.TEMPLATE, template.getName());
-        labels.put(ServiceLabels.CLOUD, ServiceLabels.CLOUD_NAME);
+        labels.put(ServiceLabels.CLOUD, cloudName);
         labels.put(ServiceLabels.CREATED, String.valueOf(System.currentTimeMillis()));
+        labels.put(ServiceLabels.ONE_SHOT, String.valueOf(template.isOneShot()));
         serviceSpec.withLabels(labels);
 
         if (isNotBlank(networkName)) {
@@ -385,7 +424,9 @@ public class DockerSwarmClient implements Closeable {
         String serviceId = response.getId();
 
         LOGGER.log(Level.FINE, "Created service: {0} with ID: {1}", new Object[]{agentName, serviceId});
-        template.incrementInstances();
+        if (incrementTemplateInstances) {
+            template.incrementInstances();
+        }
 
         return serviceId;
     }
@@ -399,7 +440,7 @@ public class DockerSwarmClient implements Closeable {
                                 @NonNull String jenkinsUrl,
                                 @Nullable String networkName) {
         String secret = SwarmComputerLauncher.getAgentSecret(agentName);
-        return createService(agentName, template, jenkinsUrl, secret, networkName);
+        return createService(agentName, template, jenkinsUrl, secret, networkName, ServiceLabels.CLOUD_NAME);
     }
 
     /**
@@ -482,16 +523,23 @@ public class DockerSwarmClient implements Closeable {
     @NonNull
     public List<Service> listServicesForCloud(@NonNull String cloudName) {
         try {
-            return dockerClient.listServicesCmd()
-                    .withLabelFilter(Map.of(
-                            ServiceLabels.AGENT, "true",
-                            ServiceLabels.CLOUD, cloudName
-                    ))
-                    .exec();
+            return listJenkinsServices().stream()
+                    .filter(service -> serviceBelongsToCloud(service, cloudName))
+                    .collect(java.util.stream.Collectors.toList());
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to list services for cloud: " + cloudName, e);
             return List.of();
         }
+    }
+
+    private boolean serviceBelongsToCloud(Service service, String cloudName) {
+        var serviceSpec = service.getSpec();
+        Map<String, String> labels = serviceSpec != null ? serviceSpec.getLabels() : null;
+        if (labels == null) {
+            return false;
+        }
+        String serviceCloud = labels.get(ServiceLabels.CLOUD);
+        return cloudName.equals(serviceCloud) || ServiceLabels.CLOUD_NAME.equals(serviceCloud);
     }
 
     /**

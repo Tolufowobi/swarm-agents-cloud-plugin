@@ -72,6 +72,7 @@ public class SwarmComputerLauncher extends JNLPLauncher {
     @Override
     public void launch(SlaveComputer computer, TaskListener listener) {
         PrintStream logger = listener.getLogger();
+        SwarmAgent agent = null;
 
         try {
             if (!(computer instanceof SwarmAgent.SwarmComputer)) {
@@ -79,7 +80,7 @@ public class SwarmComputerLauncher extends JNLPLauncher {
             }
 
             SwarmAgent.SwarmComputer swarmComputer = (SwarmAgent.SwarmComputer) computer;
-            SwarmAgent agent = swarmComputer.getNode();
+            agent = swarmComputer.getNode();
 
             if (agent == null) {
                 logger.println("ERROR: Agent node is null");
@@ -109,6 +110,23 @@ public class SwarmComputerLauncher extends JNLPLauncher {
         } catch (Exception e) {
             logger.println("ERROR: " + e.getMessage());
             LOGGER.log(Level.SEVERE, "Launch failed for: " + computer.getName(), e);
+            terminateAfterFailedLaunch(agent, logger);
+        }
+    }
+
+    private void terminateAfterFailedLaunch(@CheckForNull SwarmAgent agent, PrintStream logger) {
+        if (agent == null) {
+            return;
+        }
+        try {
+            logger.println("Cleaning up failed Swarm agent launch: " + agent.getNodeName());
+            agent.terminate();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(Level.WARNING, "Interrupted while cleaning up failed launch for: " + agent.getNodeName(), e);
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Failed to clean up failed launch for: " + agent.getNodeName(), e);
+            logger.println("Warning: failed to clean up Swarm service: " + e.getMessage());
         }
     }
 
